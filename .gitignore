@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+
+.superpowers/
+
+storage/
+uploads/
+cache/
+
+__pycache__/
+*.pyc
+
+node_modules/
+dist/
+.vite/
+
