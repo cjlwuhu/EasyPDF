@@ -39,7 +39,7 @@ EasyPDF is a local-first web app for reading English academic PDFs in Chinese wi
 
    ```powershell
    cd ..
-   .\scripts\dev.ps1
+   .\scripts\dev.cmd
    ```
 
 Open `http://127.0.0.1:5173`.
