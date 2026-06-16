@@ -3,6 +3,7 @@
 !.env.example
 
 .superpowers/
+.worktrees/
 
 storage/
 uploads/
@@ -14,4 +15,3 @@ __pycache__/
 node_modules/
 dist/
 .vite/
-
