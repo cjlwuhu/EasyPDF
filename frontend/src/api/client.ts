@@ -17,3 +17,17 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   }
   return response.json() as Promise<T>;
 }
+
+export async function apiUpload<T>(path: string, file: File): Promise<T> {
+  const body = new FormData();
+  body.append("file", file);
+
+  const response = await fetch(path, {
+    method: "POST",
+    body
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json() as Promise<T>;
+}
