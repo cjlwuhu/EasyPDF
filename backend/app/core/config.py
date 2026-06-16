@@ -34,7 +34,7 @@ class Settings(BaseSettings):
             return ""
         if len(self.api_key) <= 8:
             return "********"
-        return f"{self.api_key[:3]}-********{self.api_key[-4:]}"
+        return f"{self.api_key[:3]}********{self.api_key[-4:]}"
 
 
 settings = Settings()
