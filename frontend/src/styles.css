@@ -1,0 +1,52 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  color: #20231f;
+  background: #f6f4ef;
+  font-family: "Segoe UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.placeholder-view {
+  min-height: 100vh;
+  padding: 32px;
+}
+
+.placeholder-panel {
+  max-width: 720px;
+  border: 1px solid #d8d3c8;
+  border-radius: 8px;
+  padding: 24px;
+  background: #fffdfa;
+}
+
+.placeholder-panel h1 {
+  margin: 0 0 10px;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.placeholder-panel p {
+  margin: 0;
+  color: #5f635c;
+  line-height: 1.7;
+}
