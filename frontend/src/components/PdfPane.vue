@@ -2,7 +2,10 @@
 import { nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from "pdfjs-dist";
 
+import { useI18n } from "../i18n";
+
 const props = defineProps<{ fileUrl: string }>();
+const { t } = useI18n();
 
 GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
 
@@ -65,7 +68,7 @@ onBeforeUnmount(() => {
   <div class="pdf-pane">
     <div class="canvas-frame">
       <canvas ref="canvas" aria-label="PDF first page preview"></canvas>
-      <p v-if="loading" class="pane-state">Loading PDF...</p>
+      <p v-if="loading" class="pane-state">{{ t("loadingPdf") }}</p>
       <p v-if="error" class="pane-state error">{{ error }}</p>
     </div>
   </div>
@@ -79,11 +82,11 @@ onBeforeUnmount(() => {
 .canvas-frame {
   position: relative;
   min-height: 460px;
-  border: 1px solid #d8d3c8;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 18px;
   overflow: auto;
-  background: #ece7de;
+  background: var(--panel-muted-bg);
 }
 
 canvas {
@@ -101,12 +104,12 @@ canvas {
   margin: 0;
   border-radius: 6px;
   padding: 8px 10px;
-  background: rgb(255 253 250 / 92%);
-  color: #62675f;
+  background: var(--panel-bg);
+  color: var(--muted-text);
   font-size: 13px;
 }
 
 .error {
-  color: #8a3028;
+  color: var(--danger-text);
 }
 </style>

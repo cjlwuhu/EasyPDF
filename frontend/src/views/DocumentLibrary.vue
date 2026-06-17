@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 
 import { apiGet, apiUpload } from "../api/client";
 import StatusBadge from "../components/StatusBadge.vue";
+import { useI18n } from "../i18n";
 import type { DocumentSummary } from "../types";
 
 const router = useRouter();
@@ -13,6 +14,7 @@ const uploadInput = ref<HTMLInputElement | null>(null);
 const uploading = ref(false);
 const error = ref("");
 const uploadError = ref("");
+const { t } = useI18n();
 
 const sortedDocuments = computed(() =>
   [...documents.value].sort((left, right) => right.id - left.id)
@@ -65,8 +67,8 @@ onMounted(loadDocuments);
   <section class="library-view">
     <header class="view-header">
       <div>
-        <p class="eyebrow">Document Library</p>
-        <h1>PDF Workbench</h1>
+        <p class="eyebrow">{{ t("documentLibraryEyebrow") }}</p>
+        <h1>{{ t("documentLibraryTitle") }}</h1>
       </div>
       <div class="upload-actions">
         <input
@@ -77,7 +79,7 @@ onMounted(loadDocuments);
           @change="uploadDocument"
         />
         <button class="primary-button" type="button" :disabled="uploading" @click="chooseFile">
-          {{ uploading ? "Uploading..." : "Upload PDF" }}
+          {{ uploading ? t("uploading") : t("uploadPdf") }}
         </button>
       </div>
     </header>
@@ -87,14 +89,14 @@ onMounted(loadDocuments);
 
     <div class="library-panel">
       <div class="table-head">
-        <span>Title</span>
-        <span>File</span>
-        <span>Status</span>
+        <span>{{ t("tableTitle") }}</span>
+        <span>{{ t("tableFile") }}</span>
+        <span>{{ t("tableStatus") }}</span>
       </div>
 
-      <p v-if="loading" class="muted-state">Loading documents...</p>
+      <p v-if="loading" class="muted-state">{{ t("loadingDocuments") }}</p>
       <p v-else-if="!sortedDocuments.length" class="muted-state">
-        No PDFs yet. Upload a paper to begin translation work.
+        {{ t("emptyDocuments") }}
       </p>
 
       <template v-else>
@@ -118,6 +120,7 @@ onMounted(loadDocuments);
 .library-view {
   min-height: 100vh;
   padding: 32px;
+  background: var(--app-bg);
 }
 
 .view-header {
@@ -131,7 +134,7 @@ onMounted(loadDocuments);
 
 .eyebrow {
   margin: 0 0 6px;
-  color: #63716a;
+  color: var(--muted-text);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0;
@@ -140,7 +143,7 @@ onMounted(loadDocuments);
 
 h1 {
   margin: 0;
-  color: #1f2a25;
+  color: var(--strong-text);
   font-size: 30px;
   line-height: 1.2;
 }
@@ -157,11 +160,11 @@ h1 {
 
 .primary-button {
   min-height: 38px;
-  border: 1px solid #244c3d;
+  border: 1px solid var(--accent);
   border-radius: 6px;
   padding: 0 14px;
-  background: #244c3d;
-  color: #fffdfa;
+  background: var(--accent);
+  color: var(--accent-contrast);
   font-weight: 700;
 }
 
@@ -173,19 +176,19 @@ h1 {
 .alert {
   max-width: 1040px;
   margin: 0 0 12px;
-  border: 1px solid #e4b5ae;
+  border: 1px solid var(--danger-border);
   border-radius: 6px;
   padding: 10px 12px;
-  background: #fff2ef;
-  color: #8a3028;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .library-panel {
   max-width: 1040px;
-  border: 1px solid #d8d3c8;
+  border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background: #fffdfa;
+  background: var(--panel-bg);
 }
 
 .table-head,
@@ -198,9 +201,9 @@ h1 {
 
 .table-head {
   padding: 12px 16px;
-  border-bottom: 1px solid #e5e0d7;
-  background: #f4f0e8;
-  color: #5b635d;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--panel-muted-bg);
+  color: var(--muted-text);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -209,7 +212,7 @@ h1 {
 .document-row {
   width: 100%;
   border: 0;
-  border-bottom: 1px solid #eee9df;
+  border-bottom: 1px solid var(--border-soft);
   padding: 14px 16px;
   background: transparent;
   color: inherit;
@@ -222,14 +225,14 @@ h1 {
 
 .document-row:hover,
 .document-row:focus-visible {
-  background: #f6faf7;
+  background: var(--accent-soft);
   outline: none;
 }
 
 .document-title {
   min-width: 0;
   overflow: hidden;
-  color: #1f2a25;
+  color: var(--strong-text);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -238,7 +241,7 @@ h1 {
 .document-file {
   min-width: 0;
   overflow: hidden;
-  color: #62675f;
+  color: var(--muted-text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -246,7 +249,7 @@ h1 {
 .muted-state {
   margin: 0;
   padding: 28px 16px;
-  color: #62675f;
+  color: var(--muted-text);
 }
 
 @media (max-width: 760px) {

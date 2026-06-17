@@ -11,3 +11,9 @@ class PublicSettings(BaseModel):
     storage_dir: str
     translation_concurrency: int
     translation_batch_size: int
+
+
+class UpdateAISettingsRequest(BaseModel):
+    api_key: str = ""
+    base_url: str
+    model_name: str

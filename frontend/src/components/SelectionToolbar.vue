@@ -1,16 +1,20 @@
 <script setup lang="ts">
+import { useI18n } from "../i18n";
+
 defineEmits<{
   showOriginal: [];
   retranslate: [];
   askAi: [];
 }>();
+
+const { t } = useI18n();
 </script>
 
 <template>
   <div class="selection-toolbar" role="toolbar" aria-label="Selected paragraph actions">
-    <button type="button" @click="$emit('showOriginal')">Show original</button>
-    <button type="button" @click="$emit('retranslate')">Retranslate</button>
-    <button type="button" @click="$emit('askAi')">Ask AI</button>
+    <button type="button" @click="$emit('showOriginal')">{{ t("showOriginal") }}</button>
+    <button type="button" @click="$emit('retranslate')">{{ t("retranslate") }}</button>
+    <button type="button" @click="$emit('askAi')">{{ t("askAi") }}</button>
   </div>
 </template>
 
@@ -19,28 +23,28 @@ defineEmits<{
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  border: 1px solid #d8d3c8;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
-  background: #fffdfa;
+  background: var(--panel-bg);
   box-shadow: 0 10px 28px rgb(54 50 43 / 10%);
 }
 
 button {
   min-height: 34px;
-  border: 1px solid #cfc8ba;
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0 11px;
-  background: #f7f3eb;
-  color: #26332c;
+  background: var(--input-bg);
+  color: var(--body-text);
   font-size: 13px;
   font-weight: 700;
 }
 
 button:hover,
 button:focus-visible {
-  border-color: #244c3d;
-  background: #e9f1ec;
+  border-color: var(--accent);
+  background: var(--accent-soft);
   outline: none;
 }
 </style>

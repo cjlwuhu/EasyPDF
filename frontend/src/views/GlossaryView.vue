@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 
 import { apiGet, apiPost } from "../api/client";
 import StatusBadge from "../components/StatusBadge.vue";
+import { useI18n } from "../i18n";
 import type { GlossaryTerm } from "../types";
 
 const terms = ref<GlossaryTerm[]>([]);
@@ -14,6 +15,7 @@ const loading = ref(true);
 const saving = ref(false);
 const error = ref("");
 const formError = ref("");
+const { t } = useI18n();
 
 const canSave = computed(() => sourceTerm.value.trim() !== "" && targetTerm.value.trim() !== "");
 
@@ -63,30 +65,30 @@ onMounted(loadTerms);
   <section class="glossary-view">
     <header class="view-header">
       <div>
-        <p class="eyebrow">Translation Memory</p>
-        <h1>Glossary</h1>
+        <p class="eyebrow">{{ t("glossaryEyebrow") }}</p>
+        <h1>{{ t("glossaryTitle") }}</h1>
       </div>
     </header>
 
     <form class="term-form" @submit.prevent="addTerm">
       <label>
-        <span>Source term</span>
+        <span>{{ t("sourceTerm") }}</span>
         <input v-model="sourceTerm" autocomplete="off" />
       </label>
       <label>
-        <span>Target term</span>
+        <span>{{ t("targetTerm") }}</span>
         <input v-model="targetTerm" autocomplete="off" />
       </label>
       <label class="wide">
-        <span>Note</span>
+        <span>{{ t("note") }}</span>
         <input v-model="note" autocomplete="off" />
       </label>
       <label class="checkbox-label">
         <input v-model="keepEnglish" type="checkbox" />
-        <span>Keep English</span>
+        <span>{{ t("keepEnglish") }}</span>
       </label>
       <button class="primary-button" type="submit" :disabled="saving || !canSave">
-        {{ saving ? "Adding..." : "Add term" }}
+        {{ saving ? t("adding") : t("addTerm") }}
       </button>
     </form>
 
@@ -95,22 +97,22 @@ onMounted(loadTerms);
 
     <div class="glossary-panel">
       <div class="table-head">
-        <span>Source</span>
-        <span>Target</span>
-        <span>Note</span>
-        <span>Status</span>
+        <span>{{ t("source") }}</span>
+        <span>{{ t("target") }}</span>
+        <span>{{ t("note") }}</span>
+        <span>{{ t("tableStatus") }}</span>
       </div>
 
-      <p v-if="loading" class="muted-state">Loading glossary...</p>
+      <p v-if="loading" class="muted-state">{{ t("loadingGlossary") }}</p>
       <p v-else-if="!terms.length" class="muted-state">
-        No glossary terms yet. Add preferred translations for recurring technical terms.
+        {{ t("emptyGlossary") }}
       </p>
 
       <template v-else>
         <div v-for="term in terms" :key="term.id" class="term-row">
           <span class="strong-text">{{ term.source_term }}</span>
           <span>{{ term.target_term }}</span>
-          <span class="note-text">{{ term.note || "No note" }}</span>
+          <span class="note-text">{{ term.note || t("noNote") }}</span>
           <span class="status-cell">
             <StatusBadge :status="term.enabled ? 'enabled' : 'disabled'" />
             <span v-if="term.keep_english" class="mini-tag">EN</span>
@@ -125,6 +127,7 @@ onMounted(loadTerms);
 .glossary-view {
   min-height: 100vh;
   padding: 32px;
+  background: var(--app-bg);
 }
 
 .view-header {
@@ -134,7 +137,7 @@ onMounted(loadTerms);
 
 .eyebrow {
   margin: 0 0 6px;
-  color: #63716a;
+  color: var(--muted-text);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0;
@@ -143,7 +146,7 @@ onMounted(loadTerms);
 
 h1 {
   margin: 0;
-  color: #1f2a25;
+  color: var(--strong-text);
   font-size: 30px;
   line-height: 1.2;
 }
@@ -155,17 +158,17 @@ h1 {
   gap: 12px;
   max-width: 1040px;
   margin-bottom: 14px;
-  border: 1px solid #d8d3c8;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 16px;
-  background: #fffdfa;
+  background: var(--panel-bg);
 }
 
 label {
   display: grid;
   gap: 7px;
   min-width: 0;
-  color: #58615a;
+  color: var(--muted-text);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -174,11 +177,11 @@ label {
 input {
   width: 100%;
   min-width: 0;
-  border: 1px solid #d8d3c8;
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 11px;
-  background: #fbfaf7;
-  color: #26332c;
+  background: var(--input-bg);
+  color: var(--body-text);
   font-size: 14px;
   text-transform: none;
 }
@@ -198,11 +201,11 @@ input {
 
 .primary-button {
   min-height: 40px;
-  border: 1px solid #244c3d;
+  border: 1px solid var(--accent);
   border-radius: 6px;
   padding: 0 14px;
-  background: #244c3d;
-  color: #fffdfa;
+  background: var(--accent);
+  color: var(--accent-contrast);
   font-weight: 700;
 }
 
@@ -214,19 +217,19 @@ input {
 .alert {
   max-width: 1040px;
   margin: 0 0 12px;
-  border: 1px solid #e4b5ae;
+  border: 1px solid var(--danger-border);
   border-radius: 6px;
   padding: 10px 12px;
-  background: #fff2ef;
-  color: #8a3028;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .glossary-panel {
   max-width: 1040px;
-  border: 1px solid #d8d3c8;
+  border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background: #fffdfa;
+  background: var(--panel-bg);
 }
 
 .table-head,
@@ -239,9 +242,9 @@ input {
 
 .table-head {
   padding: 12px 16px;
-  border-bottom: 1px solid #e5e0d7;
-  background: #f4f0e8;
-  color: #5b635d;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--panel-muted-bg);
+  color: var(--muted-text);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -250,8 +253,8 @@ input {
 .term-row {
   min-height: 52px;
   padding: 12px 16px;
-  border-bottom: 1px solid #eee9df;
-  color: #40473f;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--body-text);
 }
 
 .term-row:last-child {
@@ -259,14 +262,14 @@ input {
 }
 
 .strong-text {
-  color: #1f2a25;
+  color: var(--strong-text);
   font-weight: 700;
 }
 
 .note-text {
   min-width: 0;
   overflow: hidden;
-  color: #62675f;
+  color: var(--muted-text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -283,8 +286,8 @@ input {
   height: 24px;
   border-radius: 4px;
   padding: 0 7px;
-  background: #ece7de;
-  color: #5d554b;
+  background: var(--panel-muted-bg);
+  color: var(--muted-text);
   font-size: 12px;
   font-weight: 700;
 }
@@ -292,7 +295,7 @@ input {
 .muted-state {
   margin: 0;
   padding: 28px 16px;
-  color: #62675f;
+  color: var(--muted-text);
 }
 
 @media (max-width: 900px) {

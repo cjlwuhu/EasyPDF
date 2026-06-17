@@ -6,6 +6,7 @@ import { apiGet, apiPost } from "../api/client";
 import PdfPane from "../components/PdfPane.vue";
 import SelectionToolbar from "../components/SelectionToolbar.vue";
 import StatusBadge from "../components/StatusBadge.vue";
+import { useI18n } from "../i18n";
 import type { DocumentDetail, Paragraph, ParagraphStatus, TranslationJob } from "../types";
 import { formatTranslationJobProgress } from "../utils/translationJob";
 
@@ -26,6 +27,7 @@ const assistantLoading = ref(false);
 const translationJob = ref<TranslationJob | null>(null);
 const translationJobError = ref("");
 const startTranslationLoading = ref(false);
+const { t } = useI18n();
 let translationPoller: number | undefined;
 
 const documentId = computed(() => String(route.params.id));
@@ -176,8 +178,8 @@ onBeforeUnmount(stopTranslationPolling);
   <section class="reader-view">
     <header class="reader-header">
       <div>
-        <p class="eyebrow">Reader</p>
-        <h1>{{ documentDetail?.title || "PDF Reader" }}</h1>
+        <p class="eyebrow">{{ t("readerEyebrow") }}</p>
+        <h1>{{ documentDetail?.title || t("pdfReader") }}</h1>
       </div>
       <div class="reader-meta">
         <span>{{ documentDetail?.original_filename || `Document ${documentId}` }}</span>
@@ -195,8 +197,8 @@ onBeforeUnmount(stopTranslationPolling);
       <main class="translation-column" aria-label="Translated paragraphs">
         <div class="translation-head">
           <div>
-            <p class="eyebrow">Translation Stream</p>
-            <h2>{{ sortedParagraphs.length }} paragraphs</h2>
+            <p class="eyebrow">{{ t("translationStream") }}</p>
+            <h2>{{ sortedParagraphs.length }} {{ t("paragraphs") }}</h2>
           </div>
           <div class="translation-actions">
             <button
@@ -205,9 +207,11 @@ onBeforeUnmount(stopTranslationPolling);
               :disabled="startTranslationLoading || !hasTranslatableParagraphs"
               @click="startDocumentTranslation"
             >
-              {{ startTranslationLoading ? "Starting..." : "生成中文翻译" }}
+              {{ startTranslationLoading ? t("starting") : t("generateTranslation") }}
             </button>
-            <span v-if="selectedParagraph" class="selection-chip">Selected {{ selectedParagraph.order_index + 1 }}</span>
+            <span v-if="selectedParagraph" class="selection-chip">
+              {{ t("selected") }} {{ selectedParagraph.order_index + 1 }}
+            </span>
           </div>
         </div>
 
@@ -222,8 +226,8 @@ onBeforeUnmount(stopTranslationPolling);
         </div>
         <p v-if="translationJobError" class="alert compact">{{ translationJobError }}</p>
 
-        <p v-if="loading" class="muted-state">Loading document...</p>
-        <p v-else-if="!sortedParagraphs.length" class="muted-state">No translated paragraphs are available yet.</p>
+        <p v-if="loading" class="muted-state">{{ t("loadingDocument") }}</p>
+        <p v-else-if="!sortedParagraphs.length" class="muted-state">{{ t("noParagraphs") }}</p>
 
         <div v-else class="paragraph-list">
           <button
@@ -249,30 +253,30 @@ onBeforeUnmount(stopTranslationPolling);
             @ask-ai="askAiAboutSelection"
           />
 
-          <p v-if="retranslateLoading" class="muted-line">Retranslating paragraph...</p>
+          <p v-if="retranslateLoading" class="muted-line">{{ t("retranslateParagraph") }}</p>
           <p v-if="retranslateError" class="alert compact">{{ retranslateError }}</p>
 
           <div v-if="showOriginal" class="detail-panel">
-            <p class="panel-label">Original</p>
+            <p class="panel-label">{{ t("original") }}</p>
             <p>{{ selectedSourceText }}</p>
           </div>
 
           <div class="detail-panel">
-            <p class="panel-label">Ask AI</p>
+            <p class="panel-label">{{ t("askAi") }}</p>
             <textarea
               v-model="assistantQuestion"
               rows="3"
-              placeholder="Ask about the selected translation..."
+              :placeholder="t('askAiPlaceholder')"
             ></textarea>
             <button class="primary-button" type="button" :disabled="assistantLoading" @click="askAiAboutSelection">
-              {{ assistantLoading ? "Asking..." : "Ask" }}
+              {{ assistantLoading ? t("asking") : t("ask") }}
             </button>
             <p v-if="assistantError" class="alert compact">{{ assistantError }}</p>
             <p v-if="assistantAnswer" class="assistant-answer">{{ assistantAnswer }}</p>
           </div>
 
           <div class="detail-panel">
-            <p class="panel-label">Selected text</p>
+            <p class="panel-label">{{ t("selectedText") }}</p>
             <p>{{ selectedTranslationText }}</p>
           </div>
         </section>
@@ -285,6 +289,7 @@ onBeforeUnmount(stopTranslationPolling);
 .reader-view {
   min-height: 100vh;
   padding: 28px;
+  background: var(--app-bg);
 }
 
 .reader-header {
@@ -297,7 +302,7 @@ onBeforeUnmount(stopTranslationPolling);
 
 .eyebrow {
   margin: 0 0 6px;
-  color: #63716a;
+  color: var(--muted-text);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0;
@@ -307,7 +312,7 @@ onBeforeUnmount(stopTranslationPolling);
 h1,
 h2 {
   margin: 0;
-  color: #1f2a25;
+  color: var(--strong-text);
   line-height: 1.2;
 }
 
@@ -325,7 +330,7 @@ h2 {
   justify-content: flex-end;
   gap: 10px;
   min-width: 0;
-  color: #62675f;
+  color: var(--muted-text);
 }
 
 .reader-meta span:first-child {
@@ -357,17 +362,17 @@ h2 {
   align-items: flex-end;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid #d8d3c8;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 14px 16px;
-  background: #fffdfa;
+  background: var(--panel-bg);
 }
 
 .selection-chip {
   border-radius: 4px;
   padding: 5px 8px;
-  background: #e2ebe6;
-  color: #244c3d;
+  background: var(--accent-soft);
+  color: var(--strong-text);
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -383,10 +388,10 @@ h2 {
 .job-progress {
   display: grid;
   gap: 8px;
-  border: 1px solid #d8d3c8;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 14px;
-  background: #fffdfa;
+  background: var(--panel-bg);
 }
 
 .progress-text {
@@ -394,7 +399,7 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  color: #3c4a42;
+  color: var(--body-text);
   font-size: 13px;
   font-weight: 700;
 }
@@ -403,14 +408,14 @@ h2 {
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: #e9e3d8;
+  background: var(--panel-muted-bg);
 }
 
 .progress-track span {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: #244c3d;
+  background: var(--accent);
   transition: width 160ms ease;
 }
 
@@ -426,24 +431,24 @@ h2 {
   display: grid;
   gap: 9px;
   width: 100%;
-  border: 1px solid #d8d3c8;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 14px;
-  background: #fffdfa;
-  color: #26332c;
+  background: var(--panel-bg);
+  color: var(--body-text);
   text-align: left;
 }
 
 .paragraph-card:hover,
 .paragraph-card:focus-visible,
 .paragraph-card.selected {
-  border-color: #8ca897;
-  background: #f6faf7;
+  border-color: var(--accent);
+  background: var(--accent-soft);
   outline: none;
 }
 
 .paragraph-card.selected {
-  box-shadow: inset 3px 0 0 #244c3d;
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .paragraph-meta {
@@ -451,13 +456,13 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  color: #62675f;
+  color: var(--muted-text);
   font-size: 12px;
   font-weight: 700;
 }
 
 .paragraph-text {
-  color: #26332c;
+  color: var(--body-text);
   line-height: 1.7;
 }
 
@@ -468,25 +473,25 @@ h2 {
 }
 
 .selection-panel {
-  border-top: 1px solid #d8d3c8;
+  border-top: 1px solid var(--border);
   padding-top: 12px;
 }
 
 .detail-panel {
-  border: 1px solid #d8d3c8;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
-  background: #fffdfa;
+  background: var(--panel-bg);
 }
 
 .detail-panel p {
   margin: 0;
-  color: #40473f;
+  color: var(--body-text);
   line-height: 1.7;
 }
 
 .panel-label {
-  color: #63716a !important;
+  color: var(--muted-text) !important;
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -496,28 +501,28 @@ textarea {
   width: 100%;
   min-width: 0;
   resize: vertical;
-  border: 1px solid #d8d3c8;
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 11px;
-  background: #fbfaf7;
-  color: #26332c;
+  background: var(--input-bg);
+  color: var(--body-text);
   font-size: 14px;
   line-height: 1.5;
 }
 
 textarea:focus {
-  border-color: #244c3d;
+  border-color: var(--accent);
   outline: none;
 }
 
 .primary-button {
   justify-self: start;
   min-height: 36px;
-  border: 1px solid #244c3d;
+  border: 1px solid var(--accent);
   border-radius: 6px;
   padding: 0 14px;
-  background: #244c3d;
-  color: #fffdfa;
+  background: var(--accent);
+  color: var(--accent-contrast);
   font-weight: 700;
 }
 
@@ -528,11 +533,11 @@ textarea:focus {
 
 .alert {
   margin: 0 0 12px;
-  border: 1px solid #e4b5ae;
+  border: 1px solid var(--danger-border);
   border-radius: 6px;
   padding: 10px 12px;
-  background: #fff2ef;
-  color: #8a3028;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .compact {
@@ -542,18 +547,18 @@ textarea:focus {
 .muted-state,
 .muted-line {
   margin: 0;
-  color: #62675f;
+  color: var(--muted-text);
 }
 
 .muted-state {
-  border: 1px solid #d8d3c8;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 28px 16px;
-  background: #fffdfa;
+  background: var(--panel-bg);
 }
 
 .assistant-answer {
-  border-top: 1px solid #eee9df;
+  border-top: 1px solid var(--border-soft);
   padding-top: 10px;
   white-space: pre-wrap;
 }

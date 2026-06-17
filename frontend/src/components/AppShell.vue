@@ -1,11 +1,17 @@
+<script setup lang="ts">
+import { useI18n } from "../i18n";
+
+const { t } = useI18n();
+</script>
+
 <template>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Primary navigation">
       <RouterLink class="brand" to="/">EasyPDF</RouterLink>
       <nav>
-        <RouterLink to="/">文档库</RouterLink>
-        <RouterLink to="/glossary">术语表</RouterLink>
-        <RouterLink to="/settings">设置</RouterLink>
+        <RouterLink to="/">{{ t("navLibrary") }}</RouterLink>
+        <RouterLink to="/glossary">{{ t("navGlossary") }}</RouterLink>
+        <RouterLink to="/settings">{{ t("navSettings") }}</RouterLink>
       </nav>
     </aside>
     <main class="workspace">
@@ -19,21 +25,21 @@
   min-height: 100vh;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
-  background: #f6f4ef;
-  color: #20231f;
+  background: var(--app-bg);
+  color: var(--body-text);
 }
 
 .sidebar {
-  border-right: 1px solid #d8d3c8;
+  border-right: 1px solid var(--border);
   padding: 24px 18px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  background: #fbfaf7;
+  background: var(--sidebar-bg);
 }
 
 .brand {
-  color: #1f2a25;
+  color: var(--strong-text);
   font-size: 22px;
   font-weight: 760;
   line-height: 1;
@@ -47,15 +53,15 @@ nav {
 }
 
 nav a {
-  color: #36514a;
+  color: var(--soft-text);
   padding: 10px 12px;
   border-radius: 6px;
   text-decoration: none;
 }
 
 nav a.router-link-active {
-  background: #e2ebe6;
-  color: #18382f;
+  background: var(--accent-soft);
+  color: var(--strong-text);
 }
 
 .workspace {
@@ -69,7 +75,7 @@ nav a.router-link-active {
 
   .sidebar {
     border-right: 0;
-    border-bottom: 1px solid #d8d3c8;
+    border-bottom: 1px solid var(--border);
     padding: 16px;
   }
 
