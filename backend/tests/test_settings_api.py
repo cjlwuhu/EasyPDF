@@ -1,5 +1,7 @@
+import pytest
+
 from app.core.config import Settings
-from app.services.settings import public_settings, update_ai_settings
+from app.services.settings import check_ai_connection, public_settings, update_ai_settings
 
 
 def test_public_settings_masks_api_key():
@@ -65,3 +67,55 @@ def test_update_ai_settings_keeps_existing_key_when_blank(tmp_path):
     assert settings.api_key == "sk-existing-secret"
     assert settings.base_url == "https://new.example/v1"
     assert settings.model_name == "new-model"
+
+
+@pytest.mark.anyio
+async def test_test_ai_connection_uses_form_values_without_persisting():
+    settings = Settings(api_key="sk-saved", base_url="https://saved.example/v1", model_name="saved-model")
+    calls = []
+
+    class FakeClient:
+        def __init__(self, api_key: str, base_url: str, model: str):
+            calls.append((api_key, base_url, model))
+
+        async def complete(self, prompt: str) -> str:
+            assert "connection test" in prompt
+            return "OK"
+
+    result = await check_ai_connection(
+        api_key="sk-form",
+        base_url="https://form.example/v1",
+        model_name="form-model",
+        current=settings,
+        client_class=FakeClient,
+    )
+
+    assert result == {"ok": True, "message": "AI connection succeeded."}
+    assert calls == [("sk-form", "https://form.example/v1", "form-model")]
+    assert settings.api_key == "sk-saved"
+    assert settings.base_url == "https://saved.example/v1"
+    assert settings.model_name == "saved-model"
+
+
+@pytest.mark.anyio
+async def test_test_ai_connection_falls_back_to_saved_key_when_form_key_is_blank():
+    settings = Settings(api_key="sk-saved", base_url="https://saved.example/v1", model_name="saved-model")
+    calls = []
+
+    class FakeClient:
+        def __init__(self, api_key: str, base_url: str, model: str):
+            calls.append((api_key, base_url, model))
+
+        async def complete(self, prompt: str) -> str:
+            return "OK"
+
+    result = await check_ai_connection(
+        api_key="",
+        base_url="https://form.example/v1",
+        model_name="form-model",
+        current=settings,
+        client_class=FakeClient,
+    )
+
+    assert result["ok"] is True
+    assert calls == [("sk-saved", "https://form.example/v1", "form-model")]

@@ -43,3 +43,5 @@ EasyPDF is a local-first web app for reading English academic PDFs in Chinese wi
    ```
 
 Open `http://127.0.0.1:5173`.
+
+The local backend runs on `http://127.0.0.1:8002` during development.

@@ -19,8 +19,11 @@ interface PublicSettings {
 const settings = ref<PublicSettings | null>(null);
 const loading = ref(true);
 const saving = ref(false);
+const testingConnection = ref(false);
 const error = ref("");
 const saveMessage = ref("");
+const connectionMessage = ref("");
+const connectionOk = ref(false);
 const apiKey = ref("");
 const baseUrl = ref("");
 const modelName = ref("");
@@ -60,6 +63,7 @@ async function saveSettings() {
   saving.value = true;
   error.value = "";
   saveMessage.value = "";
+  connectionMessage.value = "";
   try {
     settings.value = await apiPost<PublicSettings>("/api/settings", {
       api_key: apiKey.value,
@@ -77,6 +81,28 @@ async function saveSettings() {
   }
 }
 
+async function testConnection() {
+  testingConnection.value = true;
+  error.value = "";
+  saveMessage.value = "";
+  connectionMessage.value = "";
+  connectionOk.value = false;
+  try {
+    const result = await apiPost<{ ok: boolean; message: string }>("/api/settings/test-ai", {
+      api_key: apiKey.value,
+      base_url: baseUrl.value,
+      model_name: modelName.value
+    });
+    connectionOk.value = result.ok;
+    connectionMessage.value = result.ok ? t("connectionSucceeded") : result.message;
+  } catch (err) {
+    connectionOk.value = false;
+    connectionMessage.value = err instanceof Error ? err.message : "Failed to test API connection";
+  } finally {
+    testingConnection.value = false;
+  }
+}
+
 onMounted(loadSettings);
 </script>
 
@@ -89,6 +115,7 @@ onMounted(loadSettings);
 
     <p v-if="error" class="alert">{{ error }}</p>
     <p v-if="saveMessage" class="success">{{ saveMessage }}</p>
+    <p v-if="connectionMessage" :class="connectionOk ? 'success' : 'alert'">{{ connectionMessage }}</p>
     <p v-if="loading" class="muted-state">Loading settings...</p>
 
     <div v-else-if="settings" class="settings-layout">
@@ -114,9 +141,19 @@ onMounted(loadSettings);
           <span>{{ t("modelName") }}</span>
           <input v-model="modelName" autocomplete="off" placeholder="gpt-4.1-mini" />
         </label>
-        <button class="primary-button" type="submit" :disabled="saving">
-          {{ saving ? t("saving") : t("saveSettings") }}
-        </button>
+        <div class="button-row">
+          <button class="primary-button" type="submit" :disabled="saving || testingConnection">
+            {{ saving ? t("saving") : t("saveSettings") }}
+          </button>
+          <button
+            class="secondary-button"
+            type="button"
+            :disabled="saving || testingConnection"
+            @click="testConnection"
+          >
+            {{ testingConnection ? t("testingConnection") : t("testConnection") }}
+          </button>
+        </div>
       </form>
 
       <div class="settings-panel preference-panel">
@@ -214,7 +251,7 @@ h1 {
 
 .panel-heading,
 .wide,
-.primary-button {
+.button-row {
   grid-column: 1 / -1;
 }
 
@@ -253,18 +290,34 @@ select {
   text-transform: none;
 }
 
-.primary-button {
-  justify-self: start;
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.primary-button,
+.secondary-button {
   min-height: 40px;
-  border: 1px solid var(--accent);
   border-radius: 6px;
   padding: 0 16px;
-  background: var(--accent);
-  color: var(--accent-contrast);
   font-weight: 700;
 }
 
-.primary-button:disabled {
+.primary-button {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.secondary-button {
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--body-text);
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
   cursor: wait;
   opacity: 0.68;
 }

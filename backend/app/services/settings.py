@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from app.core.config import BACKEND_DIR, Settings, settings
+from app.services.ai_client import AIClient
 
 
 def public_settings(current: Settings = settings) -> dict[str, str | int]:
@@ -45,6 +46,33 @@ def update_ai_settings(
         model_name=current.model_name,
     )
     return public_settings(current)
+
+
+async def check_ai_connection(
+    api_key: str,
+    base_url: str,
+    model_name: str,
+    current: Settings = settings,
+    client_class: type[AIClient] = AIClient,
+) -> dict[str, bool | str]:
+    normalized_base_url = base_url.strip().rstrip("/")
+    normalized_model_name = model_name.strip()
+    normalized_api_key = api_key.strip() or current.api_key
+
+    if not normalized_api_key:
+        raise ValueError("API key cannot be empty")
+    if not normalized_base_url:
+        raise ValueError("BASE_URL cannot be empty")
+    if not normalized_model_name:
+        raise ValueError("Model name cannot be empty")
+
+    client = client_class(
+        api_key=normalized_api_key,
+        base_url=normalized_base_url,
+        model=normalized_model_name,
+    )
+    await client.complete("This is an EasyPDF AI API connection test. Reply with OK.")
+    return {"ok": True, "message": "AI connection succeeded."}
 
 
 def persist_ai_settings(env_path: Path, api_key: str, base_url: str, model_name: str) -> None:

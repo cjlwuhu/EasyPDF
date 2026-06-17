@@ -17,3 +17,8 @@ class UpdateAISettingsRequest(BaseModel):
     api_key: str = ""
     base_url: str
     model_name: str
+
+
+class TestAISettingsResponse(BaseModel):
+    ok: bool
+    message: str
