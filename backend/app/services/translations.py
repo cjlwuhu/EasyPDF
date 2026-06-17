@@ -64,6 +64,13 @@ def create_document_translation_job(db: Session, document_id: int) -> Translatio
     return job
 
 
+def get_translation_job(db: Session, job_id: int) -> TranslationJob:
+    job = db.get(TranslationJob, job_id)
+    if job is None:
+        raise ValueError("Translation job not found")
+    return job
+
+
 async def run_document_translation(db: Session, job_id: int, initial_pages: int = 3) -> TranslationJob:
     job = db.get(TranslationJob, job_id)
     if job is None:

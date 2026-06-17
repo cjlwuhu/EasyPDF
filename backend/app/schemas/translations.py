@@ -15,3 +15,12 @@ class StartDocumentTranslationResponse(BaseModel):
     job_id: int
     status: str
     total_count: int
+
+
+class TranslationJobResponse(BaseModel):
+    job_id: int
+    document_id: int
+    status: str
+    total_count: int
+    completed_count: int
+    failed_count: int

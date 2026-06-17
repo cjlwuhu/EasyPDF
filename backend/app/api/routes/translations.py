@@ -3,8 +3,18 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.db.session import SessionLocal
-from app.schemas.translations import StartDocumentTranslationResponse, TranslateParagraphRequest, TranslateParagraphResponse
-from app.services.translations import create_document_translation_job, run_document_translation, translate_paragraph
+from app.schemas.translations import (
+    StartDocumentTranslationResponse,
+    TranslateParagraphRequest,
+    TranslateParagraphResponse,
+    TranslationJobResponse,
+)
+from app.services.translations import (
+    create_document_translation_job,
+    get_translation_job,
+    run_document_translation,
+    translate_paragraph,
+)
 
 router = APIRouter(prefix="/translations", tags=["translations"])
 
@@ -35,3 +45,19 @@ def start_document_translation(document_id: int, background_tasks: BackgroundTas
     job = create_document_translation_job(db, document_id)
     background_tasks.add_task(run_job_in_new_session, job.id)
     return StartDocumentTranslationResponse(job_id=job.id, status=job.status, total_count=job.total_count)
+
+
+@router.get("/jobs/{job_id}", response_model=TranslationJobResponse)
+def read_translation_job(job_id: int, db: Session = Depends(get_db)):
+    try:
+        job = get_translation_job(db, job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return TranslationJobResponse(
+        job_id=job.id,
+        document_id=job.document_id,
+        status=job.status,
+        total_count=job.total_count,
+        completed_count=job.completed_count,
+        failed_count=job.failed_count,
+    )

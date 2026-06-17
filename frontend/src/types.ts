@@ -24,6 +24,15 @@ export interface DocumentDetail extends DocumentSummary {
   paragraphs: Paragraph[];
 }
 
+export interface TranslationJob {
+  job_id: number;
+  document_id: number;
+  status: string;
+  total_count: number;
+  completed_count: number;
+  failed_count: number;
+}
+
 export interface GlossaryTerm {
   id: number;
   source_term: string;

@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 
 import { apiGet, apiPost } from "../api/client";
 import PdfPane from "../components/PdfPane.vue";
 import SelectionToolbar from "../components/SelectionToolbar.vue";
 import StatusBadge from "../components/StatusBadge.vue";
-import type { DocumentDetail, Paragraph, ParagraphStatus } from "../types";
+import type { DocumentDetail, Paragraph, ParagraphStatus, TranslationJob } from "../types";
+import { formatTranslationJobProgress } from "../utils/translationJob";
 
 const route = useRoute();
 
@@ -22,6 +23,10 @@ const assistantError = ref("");
 const retranslateError = ref("");
 const retranslateLoading = ref(false);
 const assistantLoading = ref(false);
+const translationJob = ref<TranslationJob | null>(null);
+const translationJobError = ref("");
+const startTranslationLoading = ref(false);
+let translationPoller: number | undefined;
 
 const documentId = computed(() => String(route.params.id));
 const pdfUrl = computed(() => `/api/documents/${documentId.value}/file`);
@@ -34,6 +39,12 @@ const sortedParagraphs = computed(() =>
 const selectedSourceText = computed(() => selectedParagraph.value?.source_text ?? "");
 const selectedTranslationText = computed(
   () => selectedParagraph.value?.translated_text || selectedParagraph.value?.source_text || ""
+);
+const translationJobProgress = computed(() =>
+  translationJob.value ? formatTranslationJobProgress(translationJob.value) : null
+);
+const hasTranslatableParagraphs = computed(() =>
+  sortedParagraphs.value.some((paragraph) => paragraph.status === "pending" || paragraph.status === "failed")
 );
 
 async function loadDocument() {
@@ -77,6 +88,66 @@ async function retranslateSelectedParagraph() {
   }
 }
 
+function stopTranslationPolling() {
+  if (translationPoller !== undefined) {
+    window.clearInterval(translationPoller);
+    translationPoller = undefined;
+  }
+}
+
+function isFinishedJob(status: string): boolean {
+  return status === "completed" || status === "completed_with_errors";
+}
+
+async function pollTranslationJob(jobId: number) {
+  try {
+    translationJob.value = await apiGet<TranslationJob>(`/api/translations/jobs/${jobId}`);
+    if (isFinishedJob(translationJob.value.status)) {
+      stopTranslationPolling();
+      await loadDocument();
+    }
+  } catch (err) {
+    stopTranslationPolling();
+    translationJobError.value = err instanceof Error ? err.message : "Failed to refresh translation status";
+  }
+}
+
+function startTranslationPolling(jobId: number) {
+  stopTranslationPolling();
+  void pollTranslationJob(jobId);
+  translationPoller = window.setInterval(() => {
+    void pollTranslationJob(jobId);
+  }, 1800);
+}
+
+async function startDocumentTranslation() {
+  startTranslationLoading.value = true;
+  translationJobError.value = "";
+  try {
+    const result = await apiPost<{ job_id: number; status: string; total_count: number }>(
+      `/api/translations/documents/${documentId.value}/start`,
+      {}
+    );
+    translationJob.value = {
+      job_id: result.job_id,
+      document_id: Number(documentId.value),
+      status: result.status,
+      total_count: result.total_count,
+      completed_count: 0,
+      failed_count: 0
+    };
+    if (result.total_count > 0) {
+      startTranslationPolling(result.job_id);
+    } else {
+      await loadDocument();
+    }
+  } catch (err) {
+    translationJobError.value = err instanceof Error ? err.message : "Failed to start translation";
+  } finally {
+    startTranslationLoading.value = false;
+  }
+}
+
 async function askAiAboutSelection() {
   if (!selectedParagraph.value) return;
 
@@ -98,6 +169,7 @@ async function askAiAboutSelection() {
 }
 
 onMounted(loadDocument);
+onBeforeUnmount(stopTranslationPolling);
 </script>
 
 <template>
@@ -126,8 +198,29 @@ onMounted(loadDocument);
             <p class="eyebrow">Translation Stream</p>
             <h2>{{ sortedParagraphs.length }} paragraphs</h2>
           </div>
-          <span v-if="selectedParagraph" class="selection-chip">Selected {{ selectedParagraph.order_index + 1 }}</span>
+          <div class="translation-actions">
+            <button
+              class="primary-button"
+              type="button"
+              :disabled="startTranslationLoading || !hasTranslatableParagraphs"
+              @click="startDocumentTranslation"
+            >
+              {{ startTranslationLoading ? "Starting..." : "生成中文翻译" }}
+            </button>
+            <span v-if="selectedParagraph" class="selection-chip">Selected {{ selectedParagraph.order_index + 1 }}</span>
+          </div>
         </div>
+
+        <div v-if="translationJobProgress" class="job-progress" aria-live="polite">
+          <div class="progress-text">
+            <span>{{ translationJobProgress.label }}</span>
+            <span>{{ translationJobProgress.percent }}%</span>
+          </div>
+          <div class="progress-track">
+            <span :style="{ width: `${translationJobProgress.percent}%` }"></span>
+          </div>
+        </div>
+        <p v-if="translationJobError" class="alert compact">{{ translationJobError }}</p>
 
         <p v-if="loading" class="muted-state">Loading document...</p>
         <p v-else-if="!sortedParagraphs.length" class="muted-state">No translated paragraphs are available yet.</p>
@@ -278,6 +371,47 @@ h2 {
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.translation-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.job-progress {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d8d3c8;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fffdfa;
+}
+
+.progress-text {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #3c4a42;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e9e3d8;
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #244c3d;
+  transition: width 160ms ease;
 }
 
 .paragraph-list {
@@ -447,6 +581,11 @@ textarea:focus {
 
   .reader-meta {
     justify-content: flex-start;
+  }
+
+  .translation-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 </style>
