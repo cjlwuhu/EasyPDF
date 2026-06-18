@@ -1,16 +1,42 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { ChevronDown, ChevronUp, Download, FileText, Languages, TextSelect } from "@lucide/vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
-import { apiGet, apiPost } from "../api/client";
+import { apiDownload, apiGet, apiPost } from "../api/client";
 import PdfPane from "../components/PdfPane.vue";
 import SelectionToolbar from "../components/SelectionToolbar.vue";
 import StatusBadge from "../components/StatusBadge.vue";
 import { useI18n } from "../i18n";
 import type { DocumentDetail, Paragraph, ParagraphStatus, TranslationJob } from "../types";
+import {
+  isParagraphInRange,
+  hasTranslatedParagraphs,
+  normalizeParagraphRange,
+  normalizeVisiblePanels,
+  sortParagraphsByReadingOrder,
+  visiblePanels,
+  type PanelVisibility,
+  type ParagraphRange,
+  type ReaderPanel
+} from "../utils/readerWorkbench";
 import { formatTranslationJobProgress } from "../utils/translationJob";
 
 const route = useRoute();
+const panelStorageKey = "easypdf.reader.panels";
+const panelControls = [
+  { panel: "pdf", label: "PDF 原文", icon: FileText },
+  { panel: "source", label: "英文提取段落", icon: TextSelect },
+  { panel: "translation", label: "中文译文", icon: Languages }
+] as const;
+
+function loadPanelVisibility(): PanelVisibility {
+  try {
+    return normalizeVisiblePanels(JSON.parse(window.localStorage.getItem(panelStorageKey) || "null"));
+  } catch {
+    return normalizeVisiblePanels(null);
+  }
+}
 
 const documentDetail = ref<DocumentDetail | null>(null);
 const loading = ref(true);
@@ -24,30 +50,72 @@ const assistantError = ref("");
 const retranslateError = ref("");
 const retranslateLoading = ref(false);
 const assistantLoading = ref(false);
+const rangeTranslationLoading = ref(false);
+const rangeTranslationError = ref("");
 const translationJob = ref<TranslationJob | null>(null);
 const translationJobError = ref("");
 const startTranslationLoading = ref(false);
+const exportLoading = ref(false);
+const exportError = ref("");
+const pdfPageNumber = ref(1);
+const rangeStartIndex = ref<number | null>(null);
+const rangeEndIndex = ref<number | null>(null);
+const readerGrid = ref<HTMLElement | null>(null);
+const panelVisibility = ref<PanelVisibility>(loadPanelVisibility());
+const inspectorOpen = ref(true);
+const threePanelWeights = ref<Record<ReaderPanel, number>>({ pdf: 38, source: 38, translation: 24 });
+const pairWeights = ref<[number, number]>([1, 1]);
 const { t } = useI18n();
 let translationPoller: number | undefined;
+let activeResizeIndex: number | null = null;
+let resizeStartX = 0;
+let resizeStartWeights: number[] = [];
 
 const documentId = computed(() => String(route.params.id));
 const pdfUrl = computed(() => `/api/documents/${documentId.value}/file`);
 const paragraphs = computed(() => documentDetail.value?.paragraphs ?? []);
-const sortedParagraphs = computed(() =>
-  [...paragraphs.value].sort(
-    (left, right) => left.page_number - right.page_number || left.order_index - right.order_index
-  )
-);
+const sortedParagraphs = computed(() => sortParagraphsByReadingOrder(paragraphs.value));
 const selectedSourceText = computed(() => selectedParagraph.value?.source_text ?? "");
 const selectedTranslationText = computed(
-  () => selectedParagraph.value?.translated_text || selectedParagraph.value?.source_text || ""
+  () => selectedParagraph.value?.translated_text || "Translation pending"
 );
+const paragraphIndexById = computed(() => {
+  const indexes = new Map<number, number>();
+  sortedParagraphs.value.forEach((paragraph, index) => {
+    indexes.set(paragraph.id, index);
+  });
+  return indexes;
+});
+const selectedParagraphIndex = computed(() =>
+  selectedParagraph.value ? paragraphIndexById.value.get(selectedParagraph.value.id) ?? null : null
+);
+const selectedRange = computed<ParagraphRange | null>(() =>
+  normalizeParagraphRange(rangeStartIndex.value, rangeEndIndex.value)
+);
+const rangeParagraphs = computed(() =>
+  sortedParagraphs.value.filter((paragraph) =>
+    isParagraphInRange(paragraphIndexById.value.get(paragraph.id) ?? -1, selectedRange.value)
+  )
+);
+const visibleReaderPanels = computed(() => visiblePanels(panelVisibility.value));
+const readerGridColumns = computed(() => {
+  const panels = visibleReaderPanels.value;
+  const weights = panels.length === 3
+    ? panels.map((panel) => threePanelWeights.value[panel])
+    : panels.length === 2
+      ? pairWeights.value
+      : [1];
+  return weights.map((weight, index) => (
+    `${index > 0 ? "8px " : ""}minmax(0, ${weight}fr)`
+  )).join(" ");
+});
 const translationJobProgress = computed(() =>
   translationJob.value ? formatTranslationJobProgress(translationJob.value) : null
 );
 const hasTranslatableParagraphs = computed(() =>
   sortedParagraphs.value.some((paragraph) => paragraph.status === "pending" || paragraph.status === "failed")
 );
+const canExportTranslation = computed(() => hasTranslatedParagraphs(sortedParagraphs.value));
 
 async function loadDocument() {
   loading.value = true;
@@ -61,32 +129,67 @@ async function loadDocument() {
   }
 }
 
-function selectParagraph(paragraph: Paragraph) {
+async function selectParagraph(paragraph: Paragraph) {
   selectedParagraph.value = paragraph;
   selectedText.value = paragraph.translated_text || paragraph.source_text;
+  pdfPageNumber.value = paragraph.page_number;
   showOriginal.value = false;
   assistantAnswer.value = "";
   assistantError.value = "";
   retranslateError.value = "";
+  rangeTranslationError.value = "";
+  await nextTick();
+  document.querySelectorAll<HTMLElement>(`[data-paragraph-id="${paragraph.id}"]`).forEach((element) => {
+    element.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
 }
 
-async function retranslateSelectedParagraph() {
-  if (!selectedParagraph.value) return;
-
+async function retranslateParagraph(paragraph: Paragraph) {
   retranslateLoading.value = true;
   retranslateError.value = "";
   try {
     const result = await apiPost<{ paragraph_id: number; translated_text: string; status: string }>(
       "/api/translations/paragraph",
-      { paragraph_id: selectedParagraph.value.id }
+      { paragraph_id: paragraph.id }
     );
-    selectedParagraph.value.translated_text = result.translated_text;
-    selectedParagraph.value.status = result.status as ParagraphStatus;
-    selectedText.value = result.translated_text;
+    paragraph.translated_text = result.translated_text;
+    paragraph.status = result.status as ParagraphStatus;
+    if (selectedParagraph.value?.id === paragraph.id) {
+      selectedText.value = result.translated_text;
+    }
   } catch (err) {
     retranslateError.value = err instanceof Error ? err.message : "Failed to retranslate paragraph";
   } finally {
     retranslateLoading.value = false;
+  }
+}
+
+async function retranslateSelectedParagraph() {
+  if (!selectedParagraph.value) return;
+  await retranslateParagraph(selectedParagraph.value);
+}
+
+function setRangeStart() {
+  rangeStartIndex.value = selectedParagraphIndex.value;
+}
+
+function setRangeEnd() {
+  rangeEndIndex.value = selectedParagraphIndex.value;
+}
+
+async function translateSelectedRange() {
+  if (!selectedRange.value || rangeParagraphs.value.length === 0) return;
+
+  rangeTranslationLoading.value = true;
+  rangeTranslationError.value = "";
+  try {
+    for (const paragraph of rangeParagraphs.value) {
+      await retranslateParagraph(paragraph);
+    }
+  } catch (err) {
+    rangeTranslationError.value = err instanceof Error ? err.message : "Failed to translate selected range";
+  } finally {
+    rangeTranslationLoading.value = false;
   }
 }
 
@@ -96,6 +199,64 @@ function stopTranslationPolling() {
     translationPoller = undefined;
   }
 }
+
+function togglePanel(panel: ReaderPanel) {
+  const panels = visibleReaderPanels.value;
+  if (panelVisibility.value[panel] && panels.length === 1) return;
+  panelVisibility.value = {
+    ...panelVisibility.value,
+    [panel]: !panelVisibility.value[panel]
+  };
+  pairWeights.value = [1, 1];
+}
+
+function handleResizeMove(event: PointerEvent) {
+  if (activeResizeIndex === null || !readerGrid.value) return;
+
+  const width = readerGrid.value.getBoundingClientRect().width;
+  if (width <= 0) return;
+
+  const totalWeight = resizeStartWeights.reduce((sum, value) => sum + value, 0);
+  const deltaWeight = ((event.clientX - resizeStartX) / width) * totalWeight;
+  const leftIndex = activeResizeIndex;
+  const rightIndex = leftIndex + 1;
+  const pairTotal = resizeStartWeights[leftIndex] + resizeStartWeights[rightIndex];
+  const minimum = pairTotal * 0.2;
+  const nextLeft = Math.min(Math.max(resizeStartWeights[leftIndex] + deltaWeight, minimum), pairTotal - minimum);
+  const nextRight = pairTotal - nextLeft;
+
+  if (visibleReaderPanels.value.length === 3) {
+    const leftPanel = visibleReaderPanels.value[leftIndex];
+    const rightPanel = visibleReaderPanels.value[rightIndex];
+    threePanelWeights.value = {
+      ...threePanelWeights.value,
+      [leftPanel]: nextLeft,
+      [rightPanel]: nextRight
+    };
+  } else {
+    pairWeights.value = [nextLeft, nextRight];
+  }
+}
+
+function stopResize() {
+  activeResizeIndex = null;
+  window.removeEventListener("pointermove", handleResizeMove);
+  window.removeEventListener("pointerup", stopResize);
+}
+
+function startResize(splitterIndex: number, event: PointerEvent) {
+  activeResizeIndex = splitterIndex;
+  resizeStartX = event.clientX;
+  resizeStartWeights = visibleReaderPanels.value.length === 3
+    ? visibleReaderPanels.value.map((panel) => threePanelWeights.value[panel])
+    : [...pairWeights.value];
+  window.addEventListener("pointermove", handleResizeMove);
+  window.addEventListener("pointerup", stopResize);
+}
+
+watch(panelVisibility, (visibility) => {
+  window.localStorage.setItem(panelStorageKey, JSON.stringify(visibility));
+}, { deep: true });
 
 function isFinishedJob(status: string): boolean {
   return status === "completed" || status === "completed_with_errors";
@@ -170,8 +331,31 @@ async function askAiAboutSelection() {
   }
 }
 
+async function downloadTranslationDocx() {
+  if (!canExportTranslation.value) return;
+
+  exportLoading.value = true;
+  exportError.value = "";
+  try {
+    const result = await apiDownload(`/api/documents/${documentId.value}/translation.docx`);
+    const objectUrl = window.URL.createObjectURL(result.blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = result.filename;
+    link.click();
+    window.URL.revokeObjectURL(objectUrl);
+  } catch (err) {
+    exportError.value = err instanceof Error ? err.message : "Failed to export translation";
+  } finally {
+    exportLoading.value = false;
+  }
+}
+
 onMounted(loadDocument);
-onBeforeUnmount(stopTranslationPolling);
+onBeforeUnmount(() => {
+  stopTranslationPolling();
+  stopResize();
+});
 </script>
 
 <template>
@@ -181,115 +365,195 @@ onBeforeUnmount(stopTranslationPolling);
         <p class="eyebrow">{{ t("readerEyebrow") }}</p>
         <h1>{{ documentDetail?.title || t("pdfReader") }}</h1>
       </div>
-      <div class="reader-meta">
-        <span>{{ documentDetail?.original_filename || `Document ${documentId}` }}</span>
-        <StatusBadge v-if="documentDetail" :status="documentDetail.status" />
+      <div class="reader-header-actions">
+        <div class="reader-meta">
+          <span>{{ documentDetail?.original_filename || `Document ${documentId}` }}</span>
+          <StatusBadge v-if="documentDetail" :status="documentDetail.status" />
+        </div>
+        <div class="view-toolbar" role="toolbar" aria-label="阅读面板显示控制">
+          <button
+            v-for="control in panelControls"
+            :key="control.panel"
+            class="icon-button"
+            :class="{ active: panelVisibility[control.panel] }"
+            type="button"
+            :title="`${panelVisibility[control.panel] ? '隐藏' : '显示'}${control.label}`"
+            :aria-label="`${panelVisibility[control.panel] ? '隐藏' : '显示'}${control.label}`"
+            :aria-pressed="panelVisibility[control.panel]"
+            :disabled="panelVisibility[control.panel] && visibleReaderPanels.length === 1"
+            @click="togglePanel(control.panel)"
+          >
+            <component :is="control.icon" :size="17" aria-hidden="true" />
+          </button>
+          <button
+            class="icon-button"
+            type="button"
+            title="导出中文译文为 Word"
+            aria-label="导出中文译文为 Word"
+            :disabled="exportLoading || !canExportTranslation"
+            @click="downloadTranslationDocx"
+          >
+            <Download :size="17" aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </header>
 
     <p v-if="error" class="alert">{{ error }}</p>
+    <p v-if="exportError" class="alert">{{ exportError }}</p>
 
-    <div class="reader-grid">
-      <aside class="pdf-column" aria-label="Original PDF">
-        <PdfPane :file-url="pdfUrl" />
-      </aside>
+    <div ref="readerGrid" class="reader-grid" :style="{ gridTemplateColumns: readerGridColumns }">
+      <template v-for="(panel, panelIndex) in visibleReaderPanels" :key="panel">
+        <aside v-if="panel === 'pdf'" class="reader-panel pdf-column" aria-label="PDF 原文">
+          <PdfPane v-model:page-number="pdfPageNumber" :file-url="pdfUrl" />
+        </aside>
 
-      <main class="translation-column" aria-label="Translated paragraphs">
-        <div class="translation-head">
-          <div>
-            <p class="eyebrow">{{ t("translationStream") }}</p>
-            <h2>{{ sortedParagraphs.length }} {{ t("paragraphs") }}</h2>
+        <main v-else-if="panel === 'source'" class="reader-panel content-column source-column" aria-label="英文提取段落">
+          <div class="translation-head">
+            <div>
+              <p class="eyebrow">Extracted text</p>
+              <h2>英文段落 · {{ sortedParagraphs.length }}</h2>
+            </div>
+            <div class="translation-actions">
+              <button class="secondary-button" type="button" :disabled="selectedParagraphIndex === null" @click="setRangeStart">
+                设为起点
+              </button>
+              <button class="secondary-button" type="button" :disabled="selectedParagraphIndex === null" @click="setRangeEnd">
+                设为终点
+              </button>
+              <button class="primary-button" type="button" :disabled="rangeTranslationLoading || !selectedRange" @click="translateSelectedRange">
+                {{ rangeTranslationLoading ? "翻译中..." : "翻译区间" }}
+              </button>
+            </div>
           </div>
-          <div class="translation-actions">
+          <p v-if="rangeTranslationError" class="alert compact">{{ rangeTranslationError }}</p>
+          <p v-if="loading" class="muted-state">{{ t("loadingDocument") }}</p>
+          <p v-else-if="!sortedParagraphs.length" class="muted-state">{{ t("noParagraphs") }}</p>
+          <div v-else class="paragraph-list">
             <button
-              class="primary-button"
+              v-for="paragraph in sortedParagraphs"
+              :key="paragraph.id"
+              :data-paragraph-id="paragraph.id"
+              class="paragraph-card source-card"
+              :class="{
+                selected: selectedParagraph?.id === paragraph.id,
+                'in-range': isParagraphInRange(paragraphIndexById.get(paragraph.id) ?? -1, selectedRange)
+              }"
               type="button"
-              :disabled="startTranslationLoading || !hasTranslatableParagraphs"
-              @click="startDocumentTranslation"
+              @click="selectParagraph(paragraph)"
             >
-              {{ startTranslationLoading ? t("starting") : t("generateTranslation") }}
+              <span class="paragraph-meta">
+                <span>Page {{ paragraph.page_number }} · #{{ paragraph.reading_order + 1 }}</span>
+                <StatusBadge :status="paragraph.status" />
+              </span>
+              <span class="paragraph-text">{{ paragraph.source_text }}</span>
             </button>
-            <span v-if="selectedParagraph" class="selection-chip">
-              {{ t("selected") }} {{ selectedParagraph.order_index + 1 }}
-            </span>
           </div>
-        </div>
+        </main>
 
-        <div v-if="translationJobProgress" class="job-progress" aria-live="polite">
-          <div class="progress-text">
-            <span>{{ translationJobProgress.label }}</span>
-            <span>{{ translationJobProgress.percent }}%</span>
-          </div>
-          <div class="progress-track">
-            <span :style="{ width: `${translationJobProgress.percent}%` }"></span>
-          </div>
-        </div>
-        <p v-if="translationJobError" class="alert compact">{{ translationJobError }}</p>
-
-        <p v-if="loading" class="muted-state">{{ t("loadingDocument") }}</p>
-        <p v-else-if="!sortedParagraphs.length" class="muted-state">{{ t("noParagraphs") }}</p>
-
-        <div v-else class="paragraph-list">
-          <button
-            v-for="paragraph in sortedParagraphs"
-            :key="paragraph.id"
-            class="paragraph-card"
-            :class="{ selected: selectedParagraph?.id === paragraph.id }"
-            type="button"
-            @click="selectParagraph(paragraph)"
-          >
-            <span class="paragraph-meta">
-              <span>Page {{ paragraph.page_number }}</span>
-              <StatusBadge :status="paragraph.status" />
-            </span>
-            <span class="paragraph-text">{{ paragraph.translated_text || paragraph.source_text }}</span>
-          </button>
-        </div>
-
-        <section v-if="selectedParagraph" class="selection-panel" aria-label="Selected paragraph details">
-          <SelectionToolbar
-            @show-original="showOriginal = !showOriginal"
-            @retranslate="retranslateSelectedParagraph"
-            @ask-ai="askAiAboutSelection"
-          />
-
-          <p v-if="retranslateLoading" class="muted-line">{{ t("retranslateParagraph") }}</p>
-          <p v-if="retranslateError" class="alert compact">{{ retranslateError }}</p>
-
-          <div v-if="showOriginal" class="detail-panel">
-            <p class="panel-label">{{ t("original") }}</p>
-            <p>{{ selectedSourceText }}</p>
+        <main v-else class="reader-panel content-column translation-column" aria-label="中文译文">
+          <div class="translation-head">
+            <div>
+              <p class="eyebrow">Translation</p>
+              <h2>中文译文 · {{ sortedParagraphs.length }}</h2>
+            </div>
+            <div class="translation-actions">
+              <button class="primary-button" type="button" :disabled="startTranslationLoading || !hasTranslatableParagraphs" @click="startDocumentTranslation">
+                {{ startTranslationLoading ? t("starting") : t("generateTranslation") }}
+              </button>
+              <span v-if="selectedRange" class="selection-chip">范围 {{ selectedRange.start + 1 }}-{{ selectedRange.end + 1 }}</span>
+            </div>
           </div>
 
-          <div class="detail-panel">
-            <p class="panel-label">{{ t("askAi") }}</p>
-            <textarea
-              v-model="assistantQuestion"
-              rows="3"
-              :placeholder="t('askAiPlaceholder')"
-            ></textarea>
-            <button class="primary-button" type="button" :disabled="assistantLoading" @click="askAiAboutSelection">
-              {{ assistantLoading ? t("asking") : t("ask") }}
+          <div v-if="translationJobProgress" class="job-progress" aria-live="polite">
+            <div class="progress-text">
+              <span>{{ translationJobProgress.label }}</span>
+              <span>{{ translationJobProgress.percent }}%</span>
+            </div>
+            <div class="progress-track"><span :style="{ width: `${translationJobProgress.percent}%` }"></span></div>
+          </div>
+          <p v-if="translationJobError" class="alert compact">{{ translationJobError }}</p>
+
+          <section v-if="selectedParagraph" class="selection-panel">
+            <button class="inspector-toggle" type="button" :aria-expanded="inspectorOpen" @click="inspectorOpen = !inspectorOpen">
+              <span>
+                <span class="panel-label">当前选段</span>
+                Page {{ selectedParagraph.page_number }} · #{{ selectedParagraph.reading_order + 1 }}
+              </span>
+              <ChevronUp v-if="inspectorOpen" :size="17" aria-hidden="true" />
+              <ChevronDown v-else :size="17" aria-hidden="true" />
             </button>
-            <p v-if="assistantError" class="alert compact">{{ assistantError }}</p>
-            <p v-if="assistantAnswer" class="assistant-answer">{{ assistantAnswer }}</p>
-          </div>
 
-          <div class="detail-panel">
-            <p class="panel-label">{{ t("selectedText") }}</p>
-            <p>{{ selectedTranslationText }}</p>
+            <div v-if="inspectorOpen" class="inspector-body">
+              <SelectionToolbar
+                @show-original="showOriginal = !showOriginal"
+                @retranslate="retranslateSelectedParagraph"
+                @ask-ai="askAiAboutSelection"
+              />
+              <p v-if="retranslateLoading" class="muted-line">{{ t("retranslateParagraph") }}</p>
+              <p v-if="retranslateError" class="alert compact">{{ retranslateError }}</p>
+              <div v-if="showOriginal" class="detail-panel">
+                <p class="panel-label">{{ t("original") }}</p>
+                <p>{{ selectedSourceText }}</p>
+              </div>
+              <div class="detail-panel">
+                <p class="panel-label">{{ t("selectedText") }}</p>
+                <p>{{ selectedTranslationText }}</p>
+              </div>
+              <div class="detail-panel">
+                <p class="panel-label">{{ t("askAi") }}</p>
+                <textarea v-model="assistantQuestion" rows="3" :placeholder="t('askAiPlaceholder')"></textarea>
+                <button class="primary-button" type="button" :disabled="assistantLoading" @click="askAiAboutSelection">
+                  {{ assistantLoading ? t("asking") : t("ask") }}
+                </button>
+                <p v-if="assistantError" class="alert compact">{{ assistantError }}</p>
+                <p v-if="assistantAnswer" class="assistant-answer">{{ assistantAnswer }}</p>
+              </div>
+            </div>
+          </section>
+
+          <p v-if="loading" class="muted-state">{{ t("loadingDocument") }}</p>
+          <p v-else-if="!sortedParagraphs.length" class="muted-state">{{ t("noParagraphs") }}</p>
+          <div v-else class="paragraph-list">
+            <button
+              v-for="paragraph in sortedParagraphs"
+              :key="paragraph.id"
+              :data-paragraph-id="paragraph.id"
+              class="paragraph-card translation-card"
+              :class="{ selected: selectedParagraph?.id === paragraph.id }"
+              type="button"
+              @click="selectParagraph(paragraph)"
+            >
+              <span class="paragraph-meta">
+                <span>Page {{ paragraph.page_number }} · #{{ paragraph.reading_order + 1 }}</span>
+                <StatusBadge :status="paragraph.status" />
+              </span>
+              <span class="paragraph-text" :class="{ pending: !paragraph.translated_text }">
+                {{ paragraph.translated_text || "等待翻译" }}
+              </span>
+            </button>
           </div>
-        </section>
-      </main>
+        </main>
+
+        <button
+          v-if="panelIndex < visibleReaderPanels.length - 1"
+          class="pane-splitter"
+          type="button"
+          :aria-label="`调整${panelControls.find((item) => item.panel === panel)?.label || ''}面板宽度`"
+          @pointerdown.prevent="startResize(panelIndex, $event)"
+        ></button>
+      </template>
     </div>
   </section>
 </template>
 
 <style scoped>
 .reader-view {
-  min-height: 100vh;
+  height: 100vh;
   padding: 28px;
   background: var(--app-bg);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .reader-header {
@@ -333,6 +597,48 @@ h2 {
   color: var(--muted-text);
 }
 
+.reader-header-actions {
+  display: grid;
+  justify-items: end;
+  gap: 9px;
+  min-width: 0;
+}
+
+.view-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0;
+  background: var(--input-bg);
+  color: var(--muted-text);
+}
+
+.icon-button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--strong-text);
+}
+
+.icon-button:hover,
+.icon-button:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .reader-meta span:first-child {
   min-width: 0;
   overflow: hidden;
@@ -342,19 +648,38 @@ h2 {
 
 .reader-grid {
   display: grid;
-  grid-template-columns: minmax(320px, 0.95fr) minmax(380px, 1.05fr);
-  gap: 18px;
-  align-items: start;
+  gap: 0;
+  min-height: 0;
+  align-items: stretch;
 }
 
-.pdf-column,
-.translation-column {
+.reader-panel {
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px;
 }
 
-.translation-column {
-  display: grid;
+.content-column {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+}
+
+.pane-splitter {
+  width: 8px;
+  min-width: 8px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: linear-gradient(180deg, transparent, var(--border), transparent);
+  cursor: col-resize;
+}
+
+.pane-splitter:hover,
+.pane-splitter:focus-visible {
+  background: var(--accent);
+  outline: none;
 }
 
 .translation-head {
@@ -382,6 +707,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -421,8 +747,10 @@ h2 {
 
 .paragraph-list {
   display: grid;
+  align-content: start;
+  flex: 1;
   gap: 10px;
-  max-height: 55vh;
+  min-height: 0;
   overflow: auto;
   padding-right: 4px;
 }
@@ -451,6 +779,11 @@ h2 {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+.paragraph-card.in-range {
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
 .paragraph-meta {
   display: flex;
   align-items: center;
@@ -466,6 +799,11 @@ h2 {
   line-height: 1.7;
 }
 
+.paragraph-text.pending {
+  color: var(--muted-text);
+  font-style: italic;
+}
+
 .selection-panel,
 .detail-panel {
   display: grid;
@@ -473,8 +811,38 @@ h2 {
 }
 
 .selection-panel {
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
+  align-content: start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--panel-bg);
+}
+
+.inspector-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  padding: 11px 12px;
+  background: var(--panel-muted-bg);
+  color: var(--strong-text);
+  text-align: left;
+}
+
+.inspector-toggle > span {
+  display: grid;
+  gap: 3px;
+}
+
+.inspector-body {
+  display: grid;
+  gap: 10px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px;
+  border-top: 1px solid var(--border-soft);
 }
 
 .detail-panel {
@@ -531,6 +899,21 @@ textarea:focus {
   opacity: 0.68;
 }
 
+.secondary-button {
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 12px;
+  background: var(--input-bg);
+  color: var(--strong-text);
+  font-weight: 700;
+}
+
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .alert {
   margin: 0 0 12px;
   border: 1px solid var(--danger-border);
@@ -565,11 +948,20 @@ textarea:focus {
 
 @media (max-width: 1060px) {
   .reader-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
+    gap: 14px;
+    overflow: auto;
   }
 
-  .paragraph-list {
-    max-height: none;
+  .pane-splitter {
+    display: none;
+  }
+
+  .pdf-column,
+  .source-column,
+  .translation-column {
+    padding: 0;
+    overflow: visible;
   }
 }
 
@@ -586,6 +978,10 @@ textarea:focus {
 
   .reader-meta {
     justify-content: flex-start;
+  }
+
+  .reader-header-actions {
+    justify-items: start;
   }
 
   .translation-actions {

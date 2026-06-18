@@ -18,6 +18,7 @@ class ParagraphRead(BaseModel):
     y0: float
     x1: float
     y1: float
+    reading_order: int = 0
 
 
 class DocumentRead(BaseModel):

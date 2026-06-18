@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.schemas.glossary import GlossaryTermCreate, GlossaryTermRead
-from app.services.glossary import create_term, list_terms
+from app.services.glossary import create_term, delete_term, list_terms
 
 router = APIRouter(prefix="/glossary", tags=["glossary"])
 
@@ -22,3 +22,10 @@ def post_glossary(payload: GlossaryTermCreate, db: Session = Depends(get_db)):
         note=payload.note,
         keep_english=payload.keep_english,
     )
+
+
+@router.delete("/{term_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_glossary_term(term_id: int, db: Session = Depends(get_db)):
+    if not delete_term(db, term_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Glossary term not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

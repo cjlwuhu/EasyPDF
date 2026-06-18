@@ -3,8 +3,12 @@ import { nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from "pdfjs-dist";
 
 import { useI18n } from "../i18n";
+import { clampPageNumber } from "../utils/readerWorkbench";
 
-const props = defineProps<{ fileUrl: string }>();
+const props = defineProps<{ fileUrl: string; pageNumber: number }>();
+const emit = defineEmits<{
+  "update:pageNumber": [pageNumber: number];
+}>();
 const { t } = useI18n();
 
 GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
@@ -12,10 +16,13 @@ GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", impor
 const canvas = ref<HTMLCanvasElement | null>(null);
 const loading = ref(false);
 const error = ref("");
+const currentPage = ref(1);
+const totalPages = ref(1);
 let renderToken = 0;
 let pdfDocument: PDFDocumentProxy | null = null;
+let loadedFileUrl = "";
 
-async function renderFirstPage(fileUrl: string) {
+async function renderRequestedPage(fileUrl: string, requestedPage: number) {
   const token = ++renderToken;
   loading.value = true;
   error.value = "";
@@ -28,11 +35,21 @@ async function renderFirstPage(fileUrl: string) {
   }
 
   try {
-    pdfDocument?.destroy();
-    pdfDocument = await getDocument(fileUrl).promise;
+    if (!pdfDocument || loadedFileUrl !== fileUrl) {
+      pdfDocument?.destroy();
+      pdfDocument = await getDocument(fileUrl).promise;
+      loadedFileUrl = fileUrl;
+      totalPages.value = pdfDocument.numPages;
+    }
     if (token !== renderToken) return;
 
-    const page = await pdfDocument.getPage(1);
+    const safePage = clampPageNumber(requestedPage, totalPages.value);
+    if (safePage !== requestedPage) {
+      emit("update:pageNumber", safePage);
+    }
+
+    currentPage.value = safePage;
+    const page = await pdfDocument.getPage(safePage);
     const viewport = page.getViewport({ scale: 1.25 });
     const context = targetCanvas.getContext("2d");
     if (!context) {
@@ -56,7 +73,13 @@ async function renderFirstPage(fileUrl: string) {
   }
 }
 
-watch(() => props.fileUrl, renderFirstPage, { immediate: true });
+function goToPage(pageNumber: number) {
+  emit("update:pageNumber", clampPageNumber(pageNumber, totalPages.value));
+}
+
+watch(() => [props.fileUrl, props.pageNumber] as const, ([fileUrl, pageNumber]) => {
+  void renderRequestedPage(fileUrl, pageNumber);
+}, { immediate: true });
 
 onBeforeUnmount(() => {
   renderToken += 1;
@@ -66,8 +89,17 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="pdf-pane">
+    <div class="pdf-toolbar">
+      <button type="button" :disabled="loading || currentPage <= 1" aria-label="Previous PDF page" @click="goToPage(currentPage - 1)">
+        ‹
+      </button>
+      <span>Page {{ currentPage }} / {{ totalPages }}</span>
+      <button type="button" :disabled="loading || currentPage >= totalPages" aria-label="Next PDF page" @click="goToPage(currentPage + 1)">
+        ›
+      </button>
+    </div>
     <div class="canvas-frame">
-      <canvas ref="canvas" aria-label="PDF first page preview"></canvas>
+      <canvas ref="canvas" aria-label="PDF page preview"></canvas>
       <p v-if="loading" class="pane-state">{{ t("loadingPdf") }}</p>
       <p v-if="error" class="pane-state error">{{ error }}</p>
     </div>
@@ -77,11 +109,44 @@ onBeforeUnmount(() => {
 <style scoped>
 .pdf-pane {
   min-height: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.pdf-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--panel-bg);
+  color: var(--body-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pdf-toolbar button {
+  width: 32px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--strong-text);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.pdf-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .canvas-frame {
   position: relative;
-  min-height: 460px;
+  min-height: 0;
+  height: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 18px;

@@ -31,3 +31,13 @@ def list_terms(db: Session) -> list[GlossaryTerm]:
 def list_enabled_terms(db: Session) -> list[GlossaryTerm]:
     statement = select(GlossaryTerm).where(GlossaryTerm.enabled.is_(True)).order_by(GlossaryTerm.source_term)
     return list(db.scalars(statement))
+
+
+def delete_term(db: Session, term_id: int) -> bool:
+    term = db.get(GlossaryTerm, term_id)
+    if term is None:
+        return False
+
+    db.delete(term)
+    db.commit()
+    return True

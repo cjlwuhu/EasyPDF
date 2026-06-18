@@ -18,6 +18,7 @@ export interface Paragraph {
   y0: number;
   x1: number;
   y1: number;
+  reading_order: number;
 }
 
 export interface DocumentDetail extends DocumentSummary {

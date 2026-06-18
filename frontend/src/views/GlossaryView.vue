@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 
-import { apiGet, apiPost } from "../api/client";
+import { apiDelete, apiGet, apiPost } from "../api/client";
 import StatusBadge from "../components/StatusBadge.vue";
 import { useI18n } from "../i18n";
 import type { GlossaryTerm } from "../types";
+import { describeGlossaryDeleteError, removeGlossaryTerm } from "../utils/glossary";
 
 const terms = ref<GlossaryTerm[]>([]);
 const sourceTerm = ref("");
@@ -13,6 +14,8 @@ const note = ref("");
 const keepEnglish = ref(false);
 const loading = ref(true);
 const saving = ref(false);
+const deletingTermId = ref<number | null>(null);
+const deleteErrors = ref<Record<number, string>>({});
 const error = ref("");
 const formError = ref("");
 const { t } = useI18n();
@@ -55,6 +58,19 @@ async function addTerm() {
     formError.value = err instanceof Error ? err.message : "Failed to add glossary term";
   } finally {
     saving.value = false;
+  }
+}
+
+async function deleteTerm(termId: number) {
+  deletingTermId.value = termId;
+  delete deleteErrors.value[termId];
+  try {
+    await apiDelete(`/api/glossary/${termId}`);
+    terms.value = removeGlossaryTerm(terms.value, termId);
+  } catch (err) {
+    deleteErrors.value[termId] = describeGlossaryDeleteError(err);
+  } finally {
+    deletingTermId.value = null;
   }
 }
 
@@ -101,6 +117,7 @@ onMounted(loadTerms);
         <span>{{ t("target") }}</span>
         <span>{{ t("note") }}</span>
         <span>{{ t("tableStatus") }}</span>
+        <span>Actions</span>
       </div>
 
       <p v-if="loading" class="muted-state">{{ t("loadingGlossary") }}</p>
@@ -116,6 +133,17 @@ onMounted(loadTerms);
           <span class="status-cell">
             <StatusBadge :status="term.enabled ? 'enabled' : 'disabled'" />
             <span v-if="term.keep_english" class="mini-tag">EN</span>
+          </span>
+          <span class="action-cell">
+            <button
+              class="delete-button"
+              type="button"
+              :disabled="deletingTermId === term.id"
+              @click="deleteTerm(term.id)"
+            >
+              {{ deletingTermId === term.id ? "Deleting..." : "Delete" }}
+            </button>
+            <small v-if="deleteErrors[term.id]" class="row-error">{{ deleteErrors[term.id] }}</small>
           </span>
         </div>
       </template>
@@ -235,7 +263,7 @@ input {
 .table-head,
 .term-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) minmax(160px, 1.2fr) 150px;
+  grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) minmax(160px, 1.2fr) 150px 108px;
   align-items: center;
   gap: 16px;
 }
@@ -278,6 +306,35 @@ input {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.action-cell {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+
+.row-error {
+  max-width: 190px;
+  color: var(--danger-text);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.delete-button {
+  min-height: 34px;
+  border: 1px solid var(--danger-border);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-weight: 700;
+}
+
+.delete-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .mini-tag {

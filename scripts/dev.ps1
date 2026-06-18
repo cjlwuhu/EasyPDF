@@ -8,7 +8,7 @@ Write-Host "Starting EasyPDF backend on http://127.0.0.1:8002"
 Start-Process powershell -WindowStyle Hidden -ArgumentList @(
     "-NoExit",
     "-Command",
-    "cd `"$backend`"; conda run -n lang-chain01 python -m uvicorn app.main:app --host 127.0.0.1 --port 8002"
+    "cd `"$backend`"; conda run -n lang-chain01 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8002"
 )
 
 Write-Host "Starting EasyPDF frontend on http://127.0.0.1:5173"
